@@ -479,11 +479,11 @@ function Field({
   label: string;
   value: string;
   onChange: (v: string) => void;
-  placeholder?: string;
-  type?: string;
-  required?: boolean;
-  error?: string;
-  hint?: string;
+  placeholder?: string | undefined;
+  type?: string | undefined;
+  required?: boolean | undefined;
+  error?: string | undefined;
+  hint?: string | undefined;
 }) {
   const id = label.toLowerCase().replace(/\W+/g, "-");
   return (

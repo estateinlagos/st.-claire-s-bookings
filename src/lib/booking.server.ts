@@ -9,7 +9,9 @@
 import type {
   AvailabilityDay,
   Booking,
+  BookingStatus,
   CreateBookingInput,
+  PaymentStatus,
 } from "./booking-types";
 import { SERVICES, LOCATIONS, priceAmount, BUSINESS } from "./clinic";
 
@@ -175,6 +177,133 @@ export async function createBooking(
   };
   mockBookings.set(booking.bookingId, booking);
   return booking;
+}
+
+/* ────────────────────────── staff / admin ────────────────────────── */
+
+export function staffPasscode() {
+  return process.env["STAFF_PASSCODE"] ?? "stclaire2026";
+}
+
+export function checkPasscode(passcode: string) {
+  return passcode.trim().length > 0 && passcode.trim() === staffPasscode();
+}
+
+export async function listBookings(): Promise<Booking[]> {
+  if (isLive()) {
+    return callAppsScript<Booking[]>("listBookings", {});
+  }
+  seedMock();
+  expireHolds();
+  return [...mockBookings.values()].sort((a, b) =>
+    `${a.appointmentDate}${a.appointmentTime}`.localeCompare(
+      `${b.appointmentDate}${b.appointmentTime}`,
+    ),
+  );
+}
+
+export async function updateBooking(input: {
+  bookingId: string;
+  bookingStatus?: BookingStatus;
+  paymentStatus?: PaymentStatus;
+  artist?: string;
+  notes?: string;
+}): Promise<Booking | null> {
+  const ref = input.bookingId.trim().toUpperCase();
+  if (isLive()) {
+    return callAppsScript<Booking | null>("updateBooking", {
+      ...input,
+      bookingId: ref,
+    });
+  }
+  const booking = mockBookings.get(ref);
+  if (!booking) return null;
+  if (input.bookingStatus) booking.bookingStatus = input.bookingStatus;
+  if (input.paymentStatus) booking.paymentStatus = input.paymentStatus;
+  if (input.artist !== undefined) booking.artist = input.artist || null;
+  if (input.notes !== undefined) booking.notes = input.notes || null;
+  if (
+    booking.bookingStatus !== "TEMP_HOLD" &&
+    booking.bookingStatus !== "EXPIRED"
+  ) {
+    booking.holdExpiresAt = null;
+  }
+  return booking;
+}
+
+/**
+ * Demo rows so the dashboard is usable before the spreadsheet is connected.
+ * Never runs once APPS_SCRIPT_URL is set — real data comes from the Sheet.
+ */
+let seeded = false;
+function seedMock() {
+  if (seeded || isLive()) return;
+  seeded = true;
+  const day = (offset: number) => {
+    const d = new Date();
+    d.setDate(d.getDate() + offset);
+    return toDateKey(d);
+  };
+  const demo: Array<Partial<Booking> & { serviceId: string }> = [
+    {
+      serviceId: "microblading",
+      clientName: "Adaeze Okonkwo",
+      whatsapp: "+2348031234567",
+      appointmentDate: day(1),
+      appointmentTime: "09:00",
+      bookingStatus: "CONFIRMED",
+      paymentStatus: "VERIFIED",
+    },
+    {
+      serviceId: "microblading",
+      clientName: "Zainab Bello",
+      whatsapp: "+2348091234567",
+      appointmentDate: day(1),
+      appointmentTime: "13:00",
+      bookingStatus: "PAYMENT_PENDING",
+      paymentStatus: "PROOF_SUBMITTED",
+    },
+    {
+      serviceId: "microblading",
+      clientName: "Ifeoma Nwachukwu",
+      whatsapp: "+2347081234567",
+      appointmentDate: day(3),
+      appointmentTime: "11:00",
+      bookingStatus: "TEMP_HOLD",
+      paymentStatus: "UNPAID",
+    },
+  ];
+  for (const d of demo) {
+    const service =
+      SERVICES.find((s) => s.id === d.serviceId) ??
+      SERVICES.find((s) => s.bookable)!;
+    const price = priceAmount(service.price, "ikeja");
+    const booking: Booking = {
+      bookingId: makeRef(),
+      createdAt: new Date().toISOString(),
+      clientName: d.clientName!,
+      whatsapp: d.whatsapp!,
+      email: null,
+      serviceId: service.id,
+      serviceName: service.name,
+      locationId: "ikeja",
+      locationName: "Ikeja",
+      artist: null,
+      appointmentDate: d.appointmentDate!,
+      appointmentTime: d.appointmentTime!,
+      servicePrice: price,
+      bookingFee: BUSINESS.bookingFee,
+      balance: price === null ? null : price - BUSINESS.bookingFee,
+      paymentStatus: d.paymentStatus!,
+      bookingStatus: d.bookingStatus!,
+      holdExpiresAt:
+        d.bookingStatus === "TEMP_HOLD"
+          ? new Date(Date.now() + HOLD_MINUTES * 60_000).toISOString()
+          : null,
+      notes: null,
+    };
+    mockBookings.set(booking.bookingId, booking);
+  }
 }
 
 export async function fetchBooking(

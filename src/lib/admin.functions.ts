@@ -57,8 +57,13 @@ export const staffUpdateBooking = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     if (!checkPasscode(data.passcode)) return { ok: false as const };
-    const { passcode: _passcode, ...rest } = data;
-    const booking = await updateBooking(rest);
+    const booking = await updateBooking({
+      bookingId: data.bookingId,
+      ...(data.bookingStatus ? { bookingStatus: data.bookingStatus } : {}),
+      ...(data.paymentStatus ? { paymentStatus: data.paymentStatus } : {}),
+      ...(data.artist !== undefined ? { artist: data.artist } : {}),
+      ...(data.notes !== undefined ? { notes: data.notes } : {}),
+    });
     return booking
       ? { ok: true as const, booking }
       : { ok: false as const };
